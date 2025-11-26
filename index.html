@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pure JavaScript Game Engine Demo</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #2c3e50;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        #gameCanvas {
+            border: 2px solid #34495e;
+            background-color: #1a252f;
+            margin: 20px 0;
+        }
+        
+        .controls {
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .controls p {
+            margin: 5px 0;
+        }
+        
+        .game-object {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #34495e;
+            border-radius: 5px;
+            width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pure JavaScript Game Engine Demo</h1>
+    
+    <div class="controls">
+        <p>Use WASD or Arrow Keys to move the green square (player)</p>
+        <p>Click on the canvas to see mouse position</p>
+    </div>
+    
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <div class="controls">
+        <button onclick="addRandomCircle()">Add Random Circle</button>
+        <button onclick="addRandomRectangle()">Add Random Rectangle</button>
+        <button onclick="clearAll()">Clear All Objects</button>
+        <button onclick="togglePause()">Pause/Resume</button>
+    </div>
+    
+    <div id="mousePosition">Mouse: (0, 0)</div>
+    <div id="objectCount">Objects: 0</div>
+    
+    <script src="JavaScriptGameEngine.js"></script>
+    <script>
+        // Initialize the game engine
+        const engine = new GameEngine('gameCanvas', 800, 600);
+        
+        // Create player object
+        const player = new Rectangle(100, 100, 50, 50, '#2ecc71');
+        const playerController = new PlayerController(300);
+        
+        // Add custom update method for player with boundary checking
+        player.originalUpdate = player.update;
+        player.update = function(deltaTime, engine) {
+            // Call the original update method
+            this.originalUpdate(deltaTime, engine);
+            
+            // Add boundary checking
+            if (this.x < 0) this.x = 0;
+            if (this.y < 0) this.y = 0;
+            if (this.x + this.width > engine.canvas.width) {
+                this.x = engine.canvas.width - this.width;
+            }
+            if (this.y + this.height > engine.canvas.height) {
+                this.y = engine.canvas.height - this.height;
+            }
+            
+            // Player controller update
+            playerController.update(deltaTime, this, engine);
+        };
+        
+        // Add collision detection with other objects
+        player.checkCollisions = function() {
+            for (let obj of engine.gameObjects) {
+                if (obj !== this && obj instanceof Circle) {
+                    if (engine.checkCollision(this.getRect(), obj.getRect())) {
+                        obj.color = '#f39c12'; // Change color on collision
+                        setTimeout(() => { if (obj) obj.color = '#e74c3c'; }, 200);
+                    }
+                }
+            }
+        };
+        
+        // Add player to engine
+        engine.addObject(player);
+        
+        // Create an enemy
+        const enemy = new Circle(400, 300, 30, '#e74c3c');
+        engine.addObject(enemy);
+        
+        // Add score text
+        let score = 0;
+        const scoreText = new TextObject(10, 30, `Score: ${score}`, 24, '#ffffff');
+        engine.addObject(scoreText);
+        
+        // Add FPS counter
+        const fpsText = new TextObject(10, 60, 'FPS: 0', 16, '#ffffff');
+        engine.addObject(fpsText);
+        
+        // Track FPS
+        let frameCount = 0;
+        let lastFpsUpdate = performance.now();
+        
+        // Add custom update to player to check collisions
+        const originalPlayerUpdate = player.update;
+        player.update = function(deltaTime, engine) {
+            originalPlayerUpdate(deltaTime, engine);
+            this.checkCollisions();
+        };
+        
+        // Add custom update to engine to track FPS
+        const originalEngineUpdate = engine.update;
+        engine.update = function(deltaTime) {
+            originalEngineUpdate(deltaTime);
+            
+            // Update FPS counter
+            frameCount++;
+            const now = performance.now();
+            if (now >= lastFpsUpdate + 1000) {
+                const fps = Math.round((frameCount * 1000) / (now - lastFpsUpdate));
+                fpsText.updateText(`FPS: ${fps}`);
+                frameCount = 0;
+                lastFpsUpdate = now;
+            }
+            
+            // Update object count
+            document.getElementById('objectCount').textContent = `Objects: ${this.gameObjects.length}`;
+        };
+        
+        // Mouse position tracking
+        engine.canvas.addEventListener('mousemove', () => {
+            const mousePos = engine.getMousePosition();
+            document.getElementById('mousePosition').textContent = 
+                `Mouse: (${Math.round(mousePos.x)}, ${Math.round(mousePos.y)})`;
+        });
+        
+        // Start the game
+        engine.start();
+        
+        // Helper functions for buttons
+        function addRandomCircle() {
+            const x = Math.random() * (engine.canvas.width - 50);
+            const y = Math.random() * (engine.canvas.height - 50);
+            const radius = 15 + Math.random() * 20;
+            const color = `hsl(${Math.random() * 360}, 70%, 60%)`;
+            
+            const circle = new Circle(x, y, radius, color);
+            engine.addObject(circle);
+        }
+        
+        function addRandomRectangle() {
+            const x = Math.random() * (engine.canvas.width - 60);
+            const y = Math.random() * (engine.canvas.height - 60);
+            const width = 30 + Math.random() * 40;
+            const height = 30 + Math.random() * 40;
+            const color = `hsl(${Math.random() * 360}, 70%, 60%)`;
+            
+            const rect = new Rectangle(x, y, width, height, color);
+            engine.addObject(rect);
+        }
+        
+        function clearAll() {
+            // Keep only player, scoreText and fpsText
+            const essentialObjects = [player, scoreText, fpsText];
+            engine.gameObjects = essentialObjects;
+        }
+        
+        function togglePause() {
+            if (engine.running) {
+                engine.stop();
+            } else {
+                engine.start();
+            }
+        }
+        
+        // Add collectible items that increase score when touched by player
+        function addCollectible() {
+            const x = 50 + Math.random() * (engine.canvas.width - 100);
+            const y = 50 + Math.random() * (engine.canvas.height - 100);
+            const collectible = new Circle(x, y, 10, '#f1c40f');
+            
+            collectible.isCollectible = true;
+            collectible.checkCollection = function() {
+                if (engine.checkCollision(player.getRect(), this.getRect())) {
+                    // Increase score
+                    score++;
+                    scoreText.updateText(`Score: ${score}`);
+                    
+                    // Remove collectible
+                    engine.removeObject(this);
+                    
+                    // Add new collectible somewhere else
+                    setTimeout(addCollectible, 1000);
+                }
+            };
+            
+            collectible.originalUpdate = collectible.update;
+            collectible.update = function(deltaTime, engine) {
+                this.originalUpdate(deltaTime, engine);
+                this.checkCollection();
+            };
+            
+            engine.addObject(collectible);
+        }
+        
+        // Add a few collectibles
+        for (let i = 0; i < 5; i++) {
+            setTimeout(addCollectible, i * 1000);
+        }
+    </script>
+</body>
+</html>
